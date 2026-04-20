@@ -11,6 +11,6 @@ __pycache__/
 .mypy_cache/
 .coverage
 
-# Keep large model checkpoints and local data out of git by default
+# Keep local copied benchmark data out of git by default
 anatomy-teacher-app/ckpt/
 anatomy-teacher-app/IMIS-Bench-main/

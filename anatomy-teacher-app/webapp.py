@@ -1,8 +1,10 @@
 import cv2
 import numpy as np
+import os
 import streamlit as st
 import torch
 from pathlib import Path
+from urllib.request import urlretrieve
 from segment_anything import sam_model_registry, SamPredictor
 from streamlit_image_coordinates import streamlit_image_coordinates
 
@@ -16,13 +18,24 @@ BTCV_PATH = ROOT_DIR / "IMIS-Bench-main" / "dataset" / "BTCV"
 DISPLAY_SIZE = 512
 
 
-@st.cache_resource
-def load_predictor():
-    if not SAM_CHECKPOINT.exists():
+def ensure_checkpoint():
+    if SAM_CHECKPOINT.exists():
+        return
+
+    checkpoint_url = os.getenv("SAM_CHECKPOINT_URL", "").strip()
+    if not checkpoint_url:
         raise FileNotFoundError(
             f"SAM checkpoint not found at: {SAM_CHECKPOINT}. "
-            "Download sam_vit_b_01ec64.pth and place it there."
+            "Set SAM_CHECKPOINT_URL in deployment environment to auto-download it."
         )
+
+    SAM_CHECKPOINT.parent.mkdir(parents=True, exist_ok=True)
+    urlretrieve(checkpoint_url, SAM_CHECKPOINT)
+
+
+@st.cache_resource
+def load_predictor():
+    ensure_checkpoint()
     device = torch.device("cpu")
     sam = sam_model_registry["vit_b"](checkpoint=str(SAM_CHECKPOINT))
     sam.to(device)
@@ -164,11 +177,11 @@ def main():
     st.title("Anatomy Teaching App (Web)")
     st.caption("Green = your selection, Blue = correct answer")
 
-    if not SAM_CHECKPOINT.exists():
+    if not SAM_CHECKPOINT.exists() and not os.getenv("SAM_CHECKPOINT_URL", "").strip():
         st.error(
-            "Missing SAM model checkpoint. Add "
-            "`anatomy-teacher-app/ckpt/sam_vit_b_01ec64.pth` "
-            "to the deployed repository."
+            "Missing SAM model checkpoint. Either add "
+            "`anatomy-teacher-app/ckpt/sam_vit_b_01ec64.pth` locally "
+            "or set `SAM_CHECKPOINT_URL` in deployment to auto-download."
         )
         st.stop()
 
