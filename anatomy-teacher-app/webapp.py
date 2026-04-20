@@ -2,28 +2,31 @@ import cv2
 import numpy as np
 import streamlit as st
 import torch
+from pathlib import Path
 from segment_anything import sam_model_registry, SamPredictor
 from streamlit_image_coordinates import streamlit_image_coordinates
 
 from btcv_loader import BTCVDataLoader
 
 
-SAM_CHECKPOINT = "ckpt/sam_vit_b_01ec64.pth"
-BTCV_PATH = "../IMIS-Bench-main/dataset/BTCV"
+APP_DIR = Path(__file__).resolve().parent
+ROOT_DIR = APP_DIR.parent
+SAM_CHECKPOINT = APP_DIR / "ckpt" / "sam_vit_b_01ec64.pth"
+BTCV_PATH = ROOT_DIR / "IMIS-Bench-main" / "dataset" / "BTCV"
 DISPLAY_SIZE = 512
 
 
 @st.cache_resource
 def load_predictor():
     device = torch.device("cpu")
-    sam = sam_model_registry["vit_b"](checkpoint=SAM_CHECKPOINT)
+    sam = sam_model_registry["vit_b"](checkpoint=str(SAM_CHECKPOINT))
     sam.to(device)
     return SamPredictor(sam)
 
 
 @st.cache_resource
 def load_btcv_loader():
-    return BTCVDataLoader(BTCV_PATH)
+    return BTCVDataLoader(str(BTCV_PATH))
 
 
 def init_state():
