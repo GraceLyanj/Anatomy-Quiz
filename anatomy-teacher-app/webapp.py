@@ -5,6 +5,7 @@ import streamlit as st
 import torch
 from pathlib import Path
 from urllib.request import urlretrieve
+from urllib.parse import parse_qs, urlparse
 import gdown
 from segment_anything import sam_model_registry, SamPredictor
 from streamlit_image_coordinates import streamlit_image_coordinates
@@ -23,6 +24,22 @@ def is_google_drive_url(url):
     return "drive.google.com" in url
 
 
+def normalize_google_drive_url(url):
+    parsed = urlparse(url)
+    # Handle /file/d/<id>/view links
+    if "/file/d/" in parsed.path:
+        file_id = parsed.path.split("/file/d/")[1].split("/")[0]
+        return f"https://drive.google.com/uc?id={file_id}"
+
+    # Handle query-style links with id=...
+    query = parse_qs(parsed.query)
+    file_id = query.get("id", [None])[0]
+    if file_id:
+        return f"https://drive.google.com/uc?id={file_id}"
+
+    return url
+
+
 def validate_checkpoint_file(path):
     if not path.exists():
         return False, "Checkpoint file was not created."
@@ -39,20 +56,11 @@ def validate_checkpoint_file(path):
     return True, ""
 
 
-def ensure_checkpoint():
-    if SAM_CHECKPOINT.exists():
-        return
-
-    checkpoint_url = os.getenv("SAM_CHECKPOINT_URL", "").strip()
-    if not checkpoint_url:
-        raise FileNotFoundError(
-            f"SAM checkpoint not found at: {SAM_CHECKPOINT}. "
-            "Set SAM_CHECKPOINT_URL in deployment environment to auto-download it."
-        )
-
+def download_checkpoint(checkpoint_url):
     SAM_CHECKPOINT.parent.mkdir(parents=True, exist_ok=True)
     if is_google_drive_url(checkpoint_url):
-        gdown.download(checkpoint_url, str(SAM_CHECKPOINT), quiet=False, fuzzy=True)
+        normalized_url = normalize_google_drive_url(checkpoint_url)
+        gdown.download(normalized_url, str(SAM_CHECKPOINT), quiet=False, fuzzy=True)
     else:
         urlretrieve(checkpoint_url, SAM_CHECKPOINT)
 
@@ -65,11 +73,42 @@ def ensure_checkpoint():
         )
 
 
+def ensure_checkpoint(force_download=False):
+    checkpoint_url = os.getenv("SAM_CHECKPOINT_URL", "").strip()
+
+    if SAM_CHECKPOINT.exists() and not force_download:
+        is_valid, reason = validate_checkpoint_file(SAM_CHECKPOINT)
+        if is_valid:
+            return
+        SAM_CHECKPOINT.unlink(missing_ok=True)
+        if not checkpoint_url:
+            raise RuntimeError(
+                f"Existing checkpoint is invalid: {reason} "
+                "Set SAM_CHECKPOINT_URL to redownload a valid file."
+            )
+
+    if not checkpoint_url:
+        raise FileNotFoundError(
+            f"SAM checkpoint not found at: {SAM_CHECKPOINT}. "
+            "Set SAM_CHECKPOINT_URL in deployment environment to auto-download it."
+        )
+
+    download_checkpoint(checkpoint_url)
+
+
 @st.cache_resource
 def load_predictor():
     ensure_checkpoint()
     device = torch.device("cpu")
-    sam = sam_model_registry["vit_b"](checkpoint=str(SAM_CHECKPOINT))
+    try:
+        sam = sam_model_registry["vit_b"](checkpoint=str(SAM_CHECKPOINT))
+    except Exception as e:
+        # Most common cause in deployment is a corrupted/incomplete checkpoint download.
+        if "UnpicklingError" in type(e).__name__ or "pickle" in str(e):
+            ensure_checkpoint(force_download=True)
+            sam = sam_model_registry["vit_b"](checkpoint=str(SAM_CHECKPOINT))
+        else:
+            raise
     sam.to(device)
     return SamPredictor(sam)
 
