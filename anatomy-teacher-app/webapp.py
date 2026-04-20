@@ -60,7 +60,7 @@ def download_checkpoint(checkpoint_url):
     SAM_CHECKPOINT.parent.mkdir(parents=True, exist_ok=True)
     if is_google_drive_url(checkpoint_url):
         normalized_url = normalize_google_drive_url(checkpoint_url)
-        gdown.download(normalized_url, str(SAM_CHECKPOINT), quiet=False, fuzzy=True)
+        gdown.download(url=normalized_url, output=str(SAM_CHECKPOINT), quiet=False)
     else:
         urlretrieve(checkpoint_url, SAM_CHECKPOINT)
 
