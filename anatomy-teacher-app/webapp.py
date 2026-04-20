@@ -18,6 +18,11 @@ DISPLAY_SIZE = 512
 
 @st.cache_resource
 def load_predictor():
+    if not SAM_CHECKPOINT.exists():
+        raise FileNotFoundError(
+            f"SAM checkpoint not found at: {SAM_CHECKPOINT}. "
+            "Download sam_vit_b_01ec64.pth and place it there."
+        )
     device = torch.device("cpu")
     sam = sam_model_registry["vit_b"](checkpoint=str(SAM_CHECKPOINT))
     sam.to(device)
@@ -26,6 +31,12 @@ def load_predictor():
 
 @st.cache_resource
 def load_btcv_loader():
+    dataset_json = BTCV_PATH / "dataset.json"
+    if not dataset_json.exists():
+        raise FileNotFoundError(
+            f"BTCV dataset not found at: {BTCV_PATH}. "
+            "Expected to find dataset.json in that directory."
+        )
     return BTCVDataLoader(str(BTCV_PATH))
 
 
@@ -152,6 +163,21 @@ def main():
     st.set_page_config(page_title="Anatomy Teacher Web", layout="centered")
     st.title("Anatomy Teaching App (Web)")
     st.caption("Green = your selection, Blue = correct answer")
+
+    if not SAM_CHECKPOINT.exists():
+        st.error(
+            "Missing SAM model checkpoint. Add "
+            "`anatomy-teacher-app/ckpt/sam_vit_b_01ec64.pth` "
+            "to the deployed repository."
+        )
+        st.stop()
+
+    if not (BTCV_PATH / "dataset.json").exists():
+        st.error(
+            "Missing BTCV dataset. Add the dataset at "
+            "`IMIS-Bench-main/dataset/BTCV` (including `dataset.json`)."
+        )
+        st.stop()
 
     init_state()
     predictor = load_predictor()
