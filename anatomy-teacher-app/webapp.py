@@ -5,6 +5,7 @@ import streamlit as st
 import torch
 from pathlib import Path
 from urllib.request import urlretrieve
+import gdown
 from segment_anything import sam_model_registry, SamPredictor
 from streamlit_image_coordinates import streamlit_image_coordinates
 
@@ -16,6 +17,26 @@ ROOT_DIR = APP_DIR.parent
 SAM_CHECKPOINT = APP_DIR / "ckpt" / "sam_vit_b_01ec64.pth"
 BTCV_PATH = ROOT_DIR / "IMIS-Bench-main" / "dataset" / "BTCV"
 DISPLAY_SIZE = 512
+
+
+def is_google_drive_url(url):
+    return "drive.google.com" in url
+
+
+def validate_checkpoint_file(path):
+    if not path.exists():
+        return False, "Checkpoint file was not created."
+
+    # SAM ViT-B checkpoint is ~357MB; much smaller files are usually HTML error pages.
+    if path.stat().st_size < 100 * 1024 * 1024:
+        return False, "Downloaded file is too small and is likely not the model checkpoint."
+
+    with open(path, "rb") as f:
+        header = f.read(512).lower()
+    if b"<html" in header or b"<!doctype" in header:
+        return False, "Downloaded content appears to be an HTML page, not a .pth file."
+
+    return True, ""
 
 
 def ensure_checkpoint():
@@ -30,7 +51,18 @@ def ensure_checkpoint():
         )
 
     SAM_CHECKPOINT.parent.mkdir(parents=True, exist_ok=True)
-    urlretrieve(checkpoint_url, SAM_CHECKPOINT)
+    if is_google_drive_url(checkpoint_url):
+        gdown.download(checkpoint_url, str(SAM_CHECKPOINT), quiet=False, fuzzy=True)
+    else:
+        urlretrieve(checkpoint_url, SAM_CHECKPOINT)
+
+    is_valid, reason = validate_checkpoint_file(SAM_CHECKPOINT)
+    if not is_valid:
+        SAM_CHECKPOINT.unlink(missing_ok=True)
+        raise RuntimeError(
+            f"Checkpoint download failed validation: {reason} "
+            "Use a true direct-download URL to the .pth binary."
+        )
 
 
 @st.cache_resource
